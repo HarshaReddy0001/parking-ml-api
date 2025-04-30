@@ -3,6 +3,7 @@ from flask_cors import CORS
 import joblib
 import os
 import re
+import pandas as pd
 from datetime import datetime
 
 app = Flask(__name__)
@@ -34,7 +35,7 @@ def extract_features_from_text(text):
     # 4. Paid/Free (1 for Paid, 0 for Free)
     is_paid = 1 if "paid" in text or "pay" in text else 0
 
-    # 5. Cleaning weekday (only one active based on keyword)
+    # 5. Cleaning weekday
     cleaning_days = ["mon", "tue", "wed", "thu", "fri"]
     cleaning_features = [1 if f"cleaning {d}" in text or f"{d} cleaning" in text else 0 for d in cleaning_days]
 
@@ -54,22 +55,14 @@ def extract_features_from_text(text):
     weekend = 1 if "saturday" in text or "sunday" in text else 0
 
     # 9. Popularity & Safety (basic dummy values)
-    popularity = 2  # assume 0 to 3 scale
+    popularity = 2
     cleaning_risk = 1
     safety = 3
 
-    # Final input vector (based on your ML training format)
-    features = [
-        hour,
-        is_paid,
-        day_features[0],  # Monday
-        day_features[1],  # Tuesday
-        day_features[2],  # Wednesday
-        day_features[3],  # Thursday
-        day_features[4],  # Friday
-        day_features[5],  # Saturday
-        day_features[6],  # Sunday
-        *cleaning_features,  # mon to fri
+    return [[
+        hour, is_paid,
+        *day_features,
+        *cleaning_features,
         cleaning_start_hour,
         cleaning_end_hour,
         peak_hour,
@@ -77,8 +70,7 @@ def extract_features_from_text(text):
         popularity,
         cleaning_risk,
         safety
-    ]
-    return [features]
+    ]]
 
 # 🔮 Prediction route
 @app.route("/predict", methods=["POST"])
@@ -88,7 +80,18 @@ def predict():
         message = data.get("message", "")
 
         features = extract_features_from_text(message)
-        prediction = model.predict(features)
+
+        # Match columns used during training
+        columns = [
+            "hour", "is_paid",
+            "day_Monday", "day_Tuesday", "day_Wednesday", "day_Thursday", "day_Friday", "day_Saturday", "day_Sunday",
+            "cleaning_mon", "cleaning_tue", "cleaning_wed", "cleaning_thu", "cleaning_fri",
+            "cleaning_start_hour", "cleaning_end_hour",
+            "peak_hour", "weekend", "street_popularity", "cleaning_risk", "safety_category"
+        ]
+
+        input_df = pd.DataFrame(features, columns=columns)
+        prediction = model.predict(input_df)
 
         return jsonify({
             "reply": f"Slot {prediction[0]} is available near you 🚗\n(You asked: {message})"
